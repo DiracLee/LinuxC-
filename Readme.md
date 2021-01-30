@@ -1,15 +1,49 @@
 # Linux C++
 
-## 系统调用
+[toc]
 
-### 程序执行环境
+## 1、系统编程
 
-#### 参数列表
+### 1.1、程序执行环境
+
+#### 1.1.1、参数列表
+
+Linux 命令行规范
+
+- 短参数：以单横开头，后跟单一字符，例：`ls -h`
+- 长参数：以双横开头，后跟字符串，例：`ls --help`
+
+程序访问参数列表的方法
+
+- 主函数的参数 `argc` 和 `argv`
+- 程序接受命令行的输入参数，并解释之
 
 传给 `main` 函数的参数 `agrc` 和 `argv`
 
 - `agrc` 为命令参数总个数
 - `argv[0]` 为所执行的命令文件名
+
+编写程序，输出命令行参数
+
+```c++
+#include <iostream>
+
+using namespace std;
+
+int main( int argc, char* argv[] )
+{
+  cout << "The program name is " << argv[0] << "." << endl;
+  if( argc > 1 )
+  {
+    cout << "With " << argc - 1 << " args as follows:" << endl;
+    for( int i = 1; i < argc; ++i )
+      cout << argv[i] << endl;
+  }
+  else
+    cout << "With " << argc - 1 << " arguments." << endl;
+  return 0;
+}
+```
 
 参数解析需要的辅助工具
 
@@ -18,14 +52,14 @@
   ```c
   struct option
   {
-      const char* name;  // 选项长名称  --name
-      int has_arg;       // 该选项是否具有附加参数(0: 无; 1: 有; 2: 可选)
-      int* flag;         // 用于保存val的值，设为 nullptr
-      int val;           // 选项短名称，若输入为长选项，则此处保存对应对端名称
+      const char* name;        // 选项长名称  --name
+      int         has_arg;     // 该选项是否具有附加参数(0: 无; 1: 有; 2: 可选)
+      int *       flag;        // 用于保存val的值，设为 nullptr
+      int         val;         // 选项短名称，若输入为长选项，则此处保存对应对端名称
   };
   ```
 
-- 函数 `getopt_long()`，用于解析用户传入的参数，函数返回值为参数短名称, 参数无效时返回 '?', 不存在时返回 -1
+- 函数 `getopt_long()`，用于解析用户传入的参数，函数返回值为参数短名称, 参数无效时返回 `'?'`, 不存在时返回 `-1`
 
   ```c
   int getopt_long(int argc, char* argv[], 
@@ -34,9 +68,35 @@
                   int* long_index);                   // 所解析出的长选项在 option 数组中的索引下标
   ```
 
-- 全局变量 `optarg`，函数 `getopt_long()` 调用时自动将附加参数存储到 `optarg` 中
+- 全局变量 `optarg`，调用 `getopt_long()` 时自动将附加参数存储到 `optarg` 中
 
-编写程序，接受以下三个选项并执行正确操作
+参数处理方法
+
+- 定义选项短名称模板字符串，若某个短名称有附加参数，则在该短名称后接冒号（`:`），如示例中的
+
+  ```c++
+  const char *const shot_opts = "ho:v";
+  ```
+
+- 定义 `struct option` 数组类型的选项解析器，如示例中的
+
+  ```c++
+  const struct option long_opts[] = {{"help", 0, nullptr, 'h'},
+                                     {"output", 1, nullptr, 'o'},
+                                     {"verbose", 0, nullptr, 'v'},
+                                     {nullptr, 0, nullptr, 0}};
+  ```
+
+  注意末尾需要有 0 元素填充。
+
+- 使用循环逐轮处理 `getopt_long()` 函数返回的参数
+
+  - 如果遇到错误选项（参数无效时返回 `'?'`, 不存在时返回 `-1`），输出错误消息并终止程序执行
+  - 处理附加参数时，用全局变量 `optarg` 传递其地址
+
+- 完成所有处理后，全局变量 `optind` 为首个非可选参数的索引
+
+例：编写程序，接受以下三个选项并执行正确操作
 
 ```
 -h           --help                 # 显式程序用法并退出
@@ -77,9 +137,7 @@ int main(int argc, char *argv[]) {
                                      {"output", 1, nullptr, 'o'},
                                      {"verbose", 0, nullptr, 'v'},
                                      {nullptr, 0, nullptr, 0}};
-  // return shot option name
-  //        '?' when invalid name
-  //        -1  when no option given
+
   int opt = getopt_long(argc, argv, shot_opts, long_opts, nullptr);
 
   while (opt != -1) {
@@ -112,7 +170,7 @@ int main(int argc, char *argv[]) {
 }
 ```
 
-#### 环境变量
+#### 1.1.2、环境变量
 
 典型的Linux环境变量
 
@@ -146,30 +204,982 @@ int main()
     char* server_name = getenv("SERVER_NAME");
     if (!server_name)                        // 用户未指定环境变量SERVER_NAME
         server_name = "server.example.com";  // 使用默认值
-    
+
     cout << "accessing server " << server_name << endl;
     return 0;
 }
 ```
 
-#### 程序退出码
+编写客户端程序，在用户未指定服务器名时使用缺省服务器名称
+
+```c++
+#include <iostream>
+#include <cstdlib>
+
+int main ()
+{
+    char * server_name = getenv( "SERVER_NAME" );
+    if( !server_name ) {
+        //  SERVER_NAME环境变量未设置，使用缺省值
+        server_name = "server.yours.com";
+    }
+    cout << "accessing server" << server_name << endl;
+    // ......
+    return 0;
+}
+
+```
+
+#### 1.1.3、程序退出码
 
 程序退出码：结束时传递给操作系统的整型数据
 
-- 实际上是`main()`函数的返回值
-- 其他函数也可以调用`exit()`函数返回特定退出码
-- 退出码的变量名称经常使用`exit_code`
+- 实际上是 `main()` 函数的返回值
+- 其他函数也可以调用 `exit()` 函数返回特定退出码
+- 退出码的变量名称经常使用 `exit_code`
 - 应该仔细设计程序退出码，确保它们能够区分不同错误
 
 操作系统相应程序退出码，如果必要，执行后续处理
 
 - shell编程时查看上一次退出码指令：`echo $?`
 
-------
 
-## 进程编程
 
-### 进程的基本概念
+#### 1.1.4、系统调用错误处理
+
+实现逻辑
+
+- C程序使用断言，C++程序使用断言或异常处理机制
+
+两个主要问题
+
+- 系统调用：访问系统资源的手段
+- 系统调用失败原因：资源不足；因权限不足而被阻塞；调用参数无效，如无效内存地址或文件描述符；被外部事件中断；不可预计的外部原因
+- 资源管理：已分配资源必须在任何情况下都能正确释放
+
+Linux使用整数表示系统调用错误
+
+- 标准错误码为以“E”开头的全大写宏
+- 宏errno（使用方法类似全局变量）：表示错误码，位于头文件“errno.h”中
+- 每次错误都重写该值，处理错误时必须保留其副本
+- 函数strerror()：返回宏errno对应的错误说明字符串，位于头文件“string.h”中
+
+```c++
+//  将指定文件的拥有者改为指定的用户或组；第一个参数为文件名，
+//  第二和第三个参数分别为用户和组id，-1表示不改变
+rval = chown( path, user_id, -1 );
+if( rval )
+{
+  //  必须存储errno，因为下一次系统调用会修改该值
+  int error_code = errno;
+  //  操作不成功，chown将返回-1
+  assert( rval == -1 );
+  //  检查errno，进行对应处理
+  switch( error_code )
+  {
+  case EPERM:		//  操作被否决
+  case EROFS:		//  PATH位于只读文件系统中
+  case ENAMETOOLONG:	//  文件名太长
+  case ENOENT:		//  文件不存在
+  case ENOTDIR:		//  path的某个成分不是目录
+  case EACCES:		//  path的某个成分不可访问
+    cerr << "error when trying to change the ownership of " << path;
+    cerr << ":“ << strerror( error_code ) << endl;
+    break;
+  case EFAULT:		//  path包含无效内存地址，有可能为bug
+    abort ();
+  case ENOMEM:		//  核心内存不足
+    cerr << strerror( error_code ) << endl;
+    exit( 1 );
+  default:			//  不可预见错误，最可能为程序bug
+    abort ();
+  };
+}
+```
+
+#### 1.1.5、资源管理
+
+必须予以明确管理的资源类型
+
+- 内存、文件描述符、文件指针、临时文件、同步对象等
+
+资源管理流程
+
+- 步骤1：分配资源
+- 步骤2：正常处理流程
+- 步骤3：如果流程失败，释放资源并退出，否则执行正常处理流程
+- 步骤4：释放资源
+- 步骤5：函数返回
+
+```c++
+char * ReadFromFile( const char * filename, size_t length )
+{
+    char * buffer = new char[length];
+    if( !buffer )
+        return NULL;
+    int fd = open( filename, O_RDONLY );    //  以只读模式打开文件
+    if( fd == -1 )  {
+        delete[] buffer,  buffer = NULL;
+        return NULL;
+    }
+    size_t bytes_read = read( fd, buffer, length );
+    if( bytes_read != length )  {
+        delete[] buffer,  buffer = NULL;
+        close( fd );
+        return NULL;
+    }
+    close( fd );
+    return buffer;
+}
+```
+
+
+
+#### 1.1.6、系统日志
+
+日志：系统或程序运行的记录
+
+系统日志进程：syslogd/rsyslogd
+
+- 两者均为守护（daemon）进程，即在后台运行的进程，没有控制终端，也不会接收用户输入，父进程通常为init进程
+- 日志文件一般为“/dev/log”，日志信息一般保存在“/var/log/”目录下
+- rsyslogd既能接收用户进程输出的日志，也能接收内核日志；在接收到日志信息后，会输出到特定的日志文件中；日志信息的分发可配置
+
+日志生成函数：syslog()
+
+- 头文件：“syslog.h”
+- 原型：void syslog( int priority, const char * msg, … );
+- 可变参数列表，用于结构化输出
+- priority：日志优先级，设施值（一般默认为LOG_USER）与日志级别的位或
+- 日志级别：
+  - LOG_EMERG（0，系统不可用）
+  - LOG_ALERT（1，报警，需立即采取行动）
+  - LOG_CRIT（2，严重情况）
+  - LOG_ERR（3，错误）
+  - LOG_WARNING（4，警告）
+  - LOG_NOTICE（5，通知）
+  - LOG_INFO（6，信息）
+  - LOG_DEBUG（7，调试）
+
+日志打开函数：openlog()
+
+- 原型：void openlog( const char * ident, int logopt, int facility );
+- 改变syslog()函数的默认输出方式，以进一步结构化日志内容
+- ident：标志项，指定添加到日志消息的日期和时间后的字符串
+- logopt：日志选项，用于配置syslog()函数的行为，取值为LOG_PID（在日志消息中包含程序PID）、LOG_CONS（如果日志不能记录至日志文件，则打印到终端）、LOG_ODELAY（延迟打开日志功能，直到第一次调用syslog()函数）、LOG_NDELAY（不延迟打开日志功能）的位或
+- facility：用于修改syslog()函数的默认设施值，一般维持LOG_USER不变
+
+日志过滤函数：setlogmask()
+
+- 原型：int setlogmask( int maskpri );
+- 设置日志掩码，大于maskpri的日志级别信息被过滤
+- 返回值：设置日志掩码前的日志掩码旧值
+
+日志关闭函数：closelog()
+
+- 原型：void closelog();
+
+
+
+#### 1.1.7、用户信息
+
+UID、EUID、GID和EGID
+
+- 每个进程拥有两个用户ID：UID（真实用户ID）和EUID（有效用户ID）
+- EUID的目的：方便资源访问，运行程序的用户拥有该程序有效用户的权限
+- 组与用户类似
+
+用户信息处理函数
+
+- 获取真实用户ID：uid_t getuid();
+- 获取有效用户ID：uid_t geteuid();
+- 获取真实组ID：gid_t getgid();
+- 获取有效组ID：gid_t getegid();
+- 设置真实用户ID：int setuid( uid_t uid );
+- 设置有效用户ID：int seteuid( uid_t uid );
+- 设置真实组ID：int setgid( gid_t gid );
+- 设置有效组ID：int setegid( gid_t gid );
+
+程序示例
+
+```c++
+#include <unistd.h>
+#include <stdio.h>
+int main()
+{
+  uid_t uid = getuid(),  euid = geteuid();
+  printf("uid: %d; euid: %d\n", uid, euid );
+  return 0;
+}
+```
+
+### 1.2、输入输出
+
+#### 1.2.1、标准输入输出流
+
+标准输入流：stdin/cin
+
+标准输出流：stdout/cout
+
+- 数据有缓冲，在缓冲区满、程序正常退出、流被关闭或强制刷新（fflush()函数）时输出
+- 等到缓冲区满后同时打印多个句号：while(1) { printf( "." ); sleep(1); }
+
+标准错误流：stderr/cerr
+
+- 数据无缓冲，直接输出
+- 每秒打印一个句号：while(1) { fprintf( stderr, "." ); sleep(1); }
+
+
+
+#### 1.2.2、文件描述符
+
+文件描述符的意义与目的：在程序中代表文件
+
+- 内核为每个进程维护一个文件打开记录表，文件描述符为该文件在表中的索引值
+
+文件描述符为非负整数，范围从0至OPEN_MAX
+
+- 不同操作系统可能具有不同范围，可以同时打开的文件数目不同
+
+文件描述符的缺点
+
+- 非UNIX/Linux操作系统可能没有文件描述符概念，跨平台编程时建议使用C/C++标准库函数和文件流类
+
+预定义的标准输入输出流的文件描述符
+
+- 标准输入流stdin：STDIN_FILENO（0）
+- 标准输出流stdout：STDOUT_FILENO（1）
+- 标准错误流stderr：STDERR_FILENO（2）
+
+文件描述符的创建
+
+- Linux中凡物皆文件，操作系统使用统一方式管理和维护
+- 很多函数都可通过打开文件或设备的方式创建文件描述符
+
+#### 1.2.3、I/O函数
+
+基本与高级I/O函数
+
+- 打开关闭函数open()和close()：前者头文件“fcntl.h”，后者头文件“unistd.h”
+- 读写函数read()和write()：头文件“unistd.h”
+- 读写函数readv()和writev()：头文件“sys/uio.h”
+- 文件发送函数sendfile()：头文件“sys/sendfile.h”
+- 数据移动函数splice()：头文件“fcntl.h”
+- 数据移动函数tee()：头文件“fcntl.h”
+- 文件控制函数fcntl()：头文件“fcntl.h”
+
+打开文件函数open()
+
+- 原型：int open( const char * filename, int oflag, … );
+- 目的：打开filename指定的文件，返回其文件描述符，oflag为文件打开标志
+- 若文件支持定位，读取时从当前文件偏移量处开始
+- 文件打开标志：O_RDONLY（只读）、 O_WRONLY（只写）、 O_RDWR（读写）等
+
+关闭文件函数close()
+
+- 原型：int close( int fd );
+- 目的：关闭文件描述符fd所代表的文件
+
+读函数read()
+
+- 原型：ssize_t read( int fd, void * buf, size_t count );
+- 目的：将count个字节的数据从文件描述符fd所代表的文件中读入buf所指向的缓冲区
+- 若文件支持定位，读取时从当前文件偏移量处开始
+- 返回值：读取的字节数，0表示文件结尾，失败时返回-1并设置errno
+
+写函数write()
+
+- 原型：ssize_t write( int fd, const void * buf, size_t count );
+- 目的：将count个字节的数据从buf所指向的缓冲区写入文件描述符fd所代表的文件中
+- 参数与返回值的意义与read()相同或类似
+
+分散读函数readv()
+
+- 原型：ssize_t readv( int fd, const struct iovec * iov, int iovcnt );
+- 目的：将数据从文件描述符所代表的文件中读到分散的内存块中
+- 参数：fd为文件描述符；iov为写入的内存块结构体数组，每个数组元素只有内存基地址iov_base和内存块长度iov_len两个字段；iovcnt为读取的元素个数
+- 返回值：读取的内存块数，失败时返回-1并设置errno
+
+集中写函数writev()
+
+- 原型：ssize_t writev( int fd, const struct iovec * iov, int iovcnt );
+- 目的：将数据从分散的内存块中写入文件描述符所代表的文件中
+- 参数与返回值的意义与readv()相同或类似
+
+文件发送函数sendfile()
+
+- 原型：ssize_t sendfile( int out_fd, int in_fd, off_t * offset, int count );
+- 目的：在两个文件描述符所代表的文件间直接传递数据，以避免内核缓冲区和用户缓冲区之间的数据拷贝，提升程序效率；为网络文件传输而专门设计的函数
+- 参数：out_fd为目的文件描述符；in_fd为源文件描述符；offset指定读取时的偏移量，为NULL表示从默认位置开始读取；count为传输的字节数
+- 返回值：传输的字节数，失败时返回-1并设置errno
+
+注意事项
+
+- in_fd必须为支持类似mmap()函数的文件描述符，即必须代表真实的文件，不能为套接字和管道；out_fd必须为套接字
+
+数据移动函数splice()
+
+- 原型：ssize_t splice( int fd_in, loff_t * off_in, int fd_out, loff_t * off_out, ssize_t len, unsigned int flags );
+- 目的：在两个文件描述符所代表的文件间移动数据
+- 参数：fd_in为源文件描述符；off_in为输入数据偏移量，若fd_in为管道，则off_in必须设置为NULL；fd_out与off_out的意义类似；len为传输的字节数；flags控制数据如何移动，其取值为SPLICE_F_MOVE（新内核无效果）、SPLICE_F_NONBLOCK（非阻塞）、SPLICE_F_MORE（还有后续数据）和SPLICE_F_GIFT（无效果）的位或
+- 返回值：传输的字节数，0表示无数据移动，失败时返回-1并设置errno
+
+注意事项
+
+- fd_in和fd_out必须至少有一个为管道文件描述符
+
+数据移动函数tee()
+
+- 原型：ssize_t tee( int fd_in, int fd_out, ssize_t len, unsigned int flags );
+- 目的：在两个文件描述符所代表的管道间移动数据
+- 参数：含义与splice()相同
+- 返回值：传输的字节数，0表示无数据移动，失败时返回-1并设置errno
+
+注意事项
+
+- fd_in和fd_out必须为管道文件描述符
+
+文件控制函数fcntl()
+
+- 原型：int fcntl( int fd, int cmd, … );
+- 目的：对文件描述符所代表的文件或设备进行控制操作
+- 参数： fd为文件描述符；cmd为控制命令
+- 返回值：失败时返回-1并设置errno
+
+常用操作
+
+- 复制文件描述符：F_DUPFD/F_DUPFD_CLOEXEC，第三个参数型式long，成功时返回新创建的文件描述符
+- 获取或设置文件描述符的标志：F_GETFD/F_SETFD，第三个参数前者无，后者型式long，成功时前者返回fd的标志，后者0
+- 获取或设置文件描述符状态标志：F_GETFL/F_SETFL，第三个参数前者无，后者型式long，成功时前者返回fd的状态标志，后者0
+- 获取或设置SIGIO和SIGURG信号的宿主进程PID或进程组的GID： F_GETOWN/F_SETOWN，第三个参数前者无，后者型式long，成功时前者返回信号的宿主进程的PID或进程组的GID，后者0
+- 获取或设置信号：F_GETSIG/F_SETSIG，第三个参数前者无，后者型式long，成功时前者返回信号值，0表示SIGIO，后者0
+- 获取或设置管道容量：F_GETPIPE_SZ/F_SETPIPE_SZ，第三个参数前者无，后者型式long，成功时前者返回管道容量，后者0
+
+
+
+
+
+
+
+#### 1.2.4、临时文件
+
+使用临时文件时的注意事项
+
+- 程序多个进程可能同时运行，它们可能应该使用不同的临时文件
+- 必须小心设置文件属性，未授权用户不应具有临时文件访问权限
+- 临时文件的生成应该外部不可预测，否则系统容易受到攻击
+
+Linux临时文件函数mkstemp()
+
+- 创建名称唯一的临时文件，使用“XXXXXX”作为模板，返回文件描述符
+- 如果不希望外界看到临时文件，创建临时文件后应调用unlink()函数将其从目录项中删除，但文件本身仍存在
+- 文件采用引用计数方式访问；本程序未结束，可用文件描述符访问该文件；文件引用计数降为0，系统自动删除临时文件
+
+```c++
+#include <cstdlib>
+#include <cstring>
+#include <unistd.h>
+
+//  向临时文件中写入数据
+int  WriteToTempFile( char * buffer, size_t length )
+{
+  //  创建临时文件，“XXXXXX”将在生成时被替换，以保证文件名唯一性
+  char temp_filename[] = "/tmp/temp_file.XXXXXX";
+  int fd = mkstemp( temp_filename );
+  //  取消文件链接，不显示该临时文件；关闭文件描述符后，临时文件被删除
+  unlink( temp_filename );
+  //  向临时文件中写入数据
+  write( fd, &length, sizeof(length) );
+  write( fd, buffer, length );
+  //  返回临时文件的文件描述符
+  return fd;
+}
+
+//  从临时文件中读取数据
+char * ReadFromTempFile( int fd, size_t * length )
+{
+  //  定位到文件开头
+  lseek( fd, 0, SEEK_SET );
+  //  读取数据
+  read( fd, length, sizeof(*length) );
+  char * buffer = new char[*length];
+  read( fd, buffer, *length );
+  //  关闭文件描述符，临时文件将被删除
+  close( fd );
+  return buffer;
+}
+```
+
+
+
+
+
+
+
+### 1.3、文件系统
+
+#### 1.3.1、实际文件系统
+
+组成与功能描述
+
+- 引导块、超级块、索引结点区、数据区
+- 引导块：在文件系统开头，通常为一个扇区，存放引导程序，用于读入并启动操作系统
+- 超级块：用于记录文件系统的管理信息，不同的文件系统拥有不同的超级块
+- 索引结点区：一个文件或目录占据一个索引结点，首索引结点为该文件系统的根结点，可以利用根结点将一个文件系统挂在另一个文件系统的非叶结点上
+- 数据区：用于存放文件数据或者管理数据
+
+#### 1.3.2、虚拟文件系统VFS
+
+VFS的特点：只存于内存中，充当实际文件系统与操作系统之间的接口，提供实际文件系统的挂载，并管理实际文件系统
+
+VFS的构造：系统初始化时构造VFS目录树，建立其数据结构；每个实际文件系统使用struct file_system_type结构存储为结点，并形成链表
+
+VFS的意义与目的： 支持多种不同的文件系统，内核以一致的方式处理这些文件系统，从而对用户透明
+
+#### 1.3.3、特殊文件系统 `/proc`
+
+Linux内核的窗口，只存于内存中，并不占用磁盘空间
+
+典型信息
+
+- 进程信息：进程项、进程参数列表、进程环境、进程可执行文件、进程文件描述符、进程内存统计信息等
+- 硬件信息：CPU信息、设备信息、PCI总线信息、串口信息等
+- 内核信息：版本信息、主机名与域名信息、内存使用等
+- 设备、挂载点与文件系统
+
+### 1.4、设备
+
+#### 1.4.1、设备类型
+
+设备文件的性质
+
+- 设备文件不是普通的磁盘文件
+- 读写设备的数据需要与相应的设备驱动器通信
+
+设备文件的类型
+
+- 字符设备：读写串行数据字节流，如串口、终端等
+- 块设备：随机读写固定尺寸数据块，如磁盘设备
+
+说明
+
+- 磁盘挂载到文件系统后，使用文件和目录模式操作
+- 程序一般不用块设备，内核实现文件系统时使用块设备操作文件
+
+
+
+#### 1.4.2、设备号
+
+大设备号（major device number）
+
+- 指定设备对应哪个设备驱动器
+- 对应关系由内核确定
+
+小设备号（ minor device number ）
+
+- 区分由设备驱动器控制的单个设备或设备的某个组件
+
+示　例
+
+- 3号主设备为IDE控制器，IDE控制器可以连接多个设备（磁盘、磁带、CD-DVD驱动器等）
+- 主设备的小设备号为0，而从设备的小设备号为64
+- 主设备单独分区的小设备号从0至63，从设备单独分区的小设备号从64开始
+
+
+
+#### 1.4.3、设备项
+
+设备项：与文件类似
+
+- 可以使用mv、rm命令移动或删除
+- 如果设备支持读写，cp命令可以从（向）设备读取（写入）数据
+
+mknod系统调用：创建设备项（文件系统结点）
+
+- 原型：int mknod( const char * pathname, mode_t mode, dev_t dev );
+- 参数：pathname为设备项包含路径的名称；mode为设备的使用权限与结点类型；当文件类型为S_IFCHR或S_IFBLK时，dev表示设备的大小设备号，否则忽略
+- 设备项仅仅是与设备通信的门户，在文件系统中创建设备项并不意味着设备可用
+- 只有超级用户才可以创建设备项
+
+
+
+#### 1.4.4、设备目录
+
+操作系统已知的设备目录：/dev
+
+示例
+
+硬盘hda为块设备，硬盘有一个分区hda1
+
+```bash
+$ ls  –l  /dev/hda  /dev/hda1
+```
+
+输出
+
+```
+brw-rw----  1 root   disk  3, 0  Jul 20 2011  /dev/hda
+brw-rw----  1 root   disk  3, 1  Jul 20 2011  /dev/hda1
+```
+
+
+
+
+
+#### 1.4.5、硬件设备
+
+| 设备描述                        | 设备名称    | 大设备号 | 小设备号 |
+| ------------------------------- | ----------- | -------- | -------- |
+| 第一软驱                        | `/dev/fd0`  | `2`      | `0`      |
+| 第二软驱                        | `/dev/fd1`  | `2`      | `1`      |
+| 主 IDE 控制器，主设备           | `/dev/hda`  | `3`      | `0`      |
+| 主 IDE 控制器，主设备，第一分区 | `/dev/hda1` | `3`      | `1`      |
+| 主 IDE 控制器，从设备           | `/dev/hdb`  | `3`      | `64`     |
+| 主 IDE 控制器，从设备，第一分区 | `/dev/hdb1` | `3`      | `65`     |
+| 次 IDE 控制器，主设备           | `/dev/hdc`  | `22`     | `0`      |
+| 次 IDE 控制器，从设备           | `/edv/hdd`  | `22`     | `64`     |
+| 第一 SCSI 设备                  | `/dev/sda`  | `8`      | `0`      |
+| 第一 SCSI 设备，第一分区        | `/dev/sda1` | `8`      | `1`      |
+| 第一 SCSI  CD-ROM 驱动器        | `/dev/scd0` | `11`     | `0`      |
+| 第二 SCSI  CD-ROM 驱动器        | `/dev/scd1` | `11`     | `1`      |
+| 并口0            | `/dev/lp0` 或 `/dev/par0` | `6`      | `0`      |
+| 并口1            | `/dev/lp1` 或` /dev/par1` | `6`      | `1`      |
+| 第一串口         | `/dev/ttyS0`              | `4`      | `64`     |
+| 第二串口         | `/dev/ttyS1`              | `4`      | `65`     |
+| IDE磁带设备      | `/dev/ht0`                | `37`     | `0`      |
+| 第一SCSI磁带设备 | `/dev/st0`                | `9`      | `0`      |
+| 第二SCSI磁带设备 | `/dev/st1`                | `9`      | `1`      |
+| 系统控制台       | `/dev/console`            | 5        | `1`      |
+| 第一虚拟终端设备 | `/edv/tty1`               | `4`      | `1`      |
+| 第二虚拟终端设备 | `/dev/tty2`               | `4`      | `2`      |
+| 进程当前终端设备 | `/dev/tty`                | `5`      | `0`      |
+| 声卡             | `/dev/audio`              | `14`     | `5`      |
+
+#### 1.4.6、特殊设备
+
+/dev/null：哑设备
+
+- 任何写入哑设备的数据被抛弃
+- 从哑设备读取不到任何数据，例如cp /dev/null empty-file命令将创建一个长度为0的空文件
+
+/dev/zero：零设备
+
+- 行为类似文件，长度无限，但内容全部为0
+
+/dev/full：满设备
+
+- 行为类似文件，没有空闲空间存储任何数据
+- 对满设备的写入总是失败，并将errno设为ENOSPC
+
+/dev/random 和 /dev/urandom：随机数设备
+
+- C语言的rand()函数生成伪随机数
+
+随机数设备原理
+
+- 人的行为无法预测，因而是随机的
+- Linux内核测量用户的输入活动（如键盘输入和鼠标操作）的时间延迟作为随机数
+
+两者区别
+
+- /dev/random：在用户没有输入操作时，阻塞随机数读取进程（没有数据可读取）
+- /dev/urandom：永不阻塞；在用户没有输入操作时，生成伪随机数代替
+
+
+
+#### 1.4.7、设备控制与访问
+
+设备访问
+
+- 像文件一样操作设备
+- 示例：向并口设备发送数据
+
+    ```c++
+    int fd = open( "/dev/lp0", O_WRONLY );
+    write( fd, buffer, buffer_length );
+    close( fd );
+    ```
+
+控制硬件设备的函数： ioctl()
+
+- 第一个参数为文件描述符，指定想要控制的设备；
+- 第二个参数为控制命令码，指定想要实施的操作
+
+```c++
+#include <fcntl.h>
+#include <linux/cdrom.h>
+#include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+int main (int argc, char* argv[])
+{
+  int fd = open( argv[1], O_RDONLY );	//  打开参数所表示的设备
+  ioctl( fd, CDROMEJECT );			//  弹出CD-ROM
+  close( fd );
+  return 0;
+}
+```
+
+
+
+
+
+### 1.5、库
+
+静态库（Archives）
+
+- 后缀一般为“*.a”
+- 使用两个目标文件创建单一静态库的编译与链接命令：ar cr libtest.a test1.o test2.o
+- 链接器搜索静态库时，链接所有已引用而未处理的符号
+- 将静态库的链接放置在命令行尾部，确保其引用被正确解析
+
+动态库（Shared Object）
+
+- 共享目标库（类似Windows的DLL），后缀一般为“*.so”
+- 编译命令：g++ -shared -fPIC -o libtest.so test1.o test2.o
+- PIC：位置无关代码（Position-Independent Code）
+- 编译器首先链接动态库，其次才是静态库
+- 如果要强制链接静态库，编译使用-static选项
+
+#### 1.5.1、标准库与库的相关性
+
+C标准库：libc
+
+- 数学库单独：libm；需要调用数学函数时，显式链接数学库：g++ -o compute compute.c –lm
+
+C++标准库：libstdc++
+
+- 编译C++11程序，使用g++-4.8 -std=c++11；对于Code::Blocks等集成开发环境，在编译器设置对话框中选中相应的C++11选项
+
+库的相关性
+
+- 链接时需要注意交叉引用被正确解析，例如：libtiff库需要libjpeg库（jpeg图像处理）和libz库（压缩处理）
+- 独立库链接： g++ -static -o tifftest tifftest.c -ltiff -ljpeg –lz
+- 相关库链接： g++ -o app app.o -la -lb -la
+
+#### 1.5.2、动态库的装载与卸载
+
+动态库装载函数dlopen()：头文件“dlfcn.h”
+
+- 原型：void * dlopen( const char * filename, int flag );
+- 参数：filename为动态库名称；flag为装载模式，必须为RTLD_LAZY或RTLD_NOW两者之一，并可与其他装载标识（如RTLD_GLOBAL、RTLD_LOCAL）组合
+- 返回值：类型为void *，用以表示动态库句柄；调用失败返回NULL
+- 示例：dlopen( "libtest.so", RTLD_LAZY );
+
+函数查找与装载函数dlsym()
+
+- 原型：void * dlsym( void * handle, const char * symbol );
+- 参数：handle为动态库句柄；symbol为函数名称字符串
+- 返回值：目标函数装载在内存中的基地址
+
+动态库卸载函数dlclose()
+
+- 原型：int dlclose( void * handle );
+- 参数：handle为动态库句柄
+- 返回值：成功时为0，其他为错误
+
+动态库错误处理函数dlerror()
+
+- 原型：char * dlerror();
+- 返回值：其他三个函数调用时最后一次产生的错误描述字符串
+
+调用动态库中的函数，设函数名为g
+
+- 混合C/C++编码时，C函数应封装于extern "C" { … } 块中，确保名解析正确工作（C不支持函数重载）
+- 链接选项：“-ldl”
+
+```c++
+void * handle = dlopen( "libtest.so", RTLD_LAZY );
+//  声明函数指针指向动态库中的函数，按被调函数的名称查找
+void ( *test )() = dlsym( handle, "g" );
+( *test )();    //  使用函数指针调用动态库中的函数
+dlclose( handle );
+```
+
+
+
+### 1.6、Makefile 文件
+
+#### 1.6.1、Makefile
+
+make命令：负责C/C++程序编译与链接
+
+- make根据指定命令进行建构
+
+- 建构规则文件：GNUmakefile、makefile、Makefile
+
+#### 1.6.2、Makefile文件格式
+
+makefile语法
+
+- 基本语法、变量、条件判断、循环、函数
+
+makefile文件基本格式
+
+```makefile
+target ... : prerequisites ...
+[Tab键]	commands
+```
+
+makefile文件规则
+
+- makefile文件由一系列规则构成
+- 规则的目的：建构目标的先决条件是什么以及如何建构目标
+- 如果未指定目标，缺省执行第一个目标
+- 若prerequisites中有一个以上的文件比target文件要新，执行commands所定义的命令
+
+target：目标
+
+- 通常为编译期的文件名，以指定要建构的对象，也可以是执行文件，还可以是标签（操作名称，伪目标）
+- 可以为单一目标，也可以为空格分隔的多个目标
+- 每个目标都定义了一组处理规则，和其相关规则构成规则链
+
+prerequisites：先决条件
+
+- 为生成该目标所需的先决文件或目标（前置条件）
+- 一般为空格分隔的文件名，指定目标是否重建的判断标准，即只要有一个先决文件不存在或有过更新，就重建目标
+- 若目标先决条件本身需要重建，则匹配该先决条件的目标，执行其对应的命令
+
+commands：命令
+
+- 由一行或多行shell命令组成，命令前有Tab键
+- 指示如何建构目标，一般为生成目标文件
+- 每行命令都在单独的进程中执行，彼此没有继承关系，不能简单传递数据；解决办法：用分号将多条命令书写在单行（此时可用“\”折行），或者为该条规则添加指示“.ONESHELL :”
+
+伪目标：操作名称，而不是文件名
+
+- 删除编译后的二进制目标文件，例如：
+
+  ```makefile
+  clean :
+  	rm -f *.o
+  ```
+
+- 执行命令时须指定伪目标：$ make clean
+
+- 若当前目录下有clean文件，则此规则不会被执行；此时可用“.PHONY : clean”明确指示clean为伪目标；make将跳过文件检查，执行其对应的命令
+
+- 执行清除任务的伪目标一般放置在脚本的最后
+
+伪目标惯例
+
+- all：所有目标的目标，一般为编译所有的目标，对同时编译多个程序极为有用
+- clean：删除由make创建的文件
+- install：安装已编译好的程序，主要任务是完成目标执行文件的拷贝
+- print：列出改变过的源文件
+- tar：打包备份源程序，形成tar文件
+- dist：创建压缩文件，一般将tar文件压缩成Z文件或gz文件
+- TAGS：更新所有的目标，以备完整地重编译使用
+- check和test：一般用来测试makefile的流程
+
+示例：假设程序主文件“main.c”，使用library库
+
+```makefile
+#  注释行
+prog : main.o library.o
+	cc -o prog main.o library.o
+
+main.o : main.c library.h
+	cc -c main.c
+
+library.o : library.c library.h
+	cc -c library.c
+	
+	
+.PHONY : clean
+clean :
+	rm main.o library.o
+```
+
+#### 1.6.3、Makefile 文件语法
+
+行解析：命令按行解析
+
+- 命令行的行首字符为Tab键，其他行的行首字符不得为Tab键，但可以使用多个空格缩进
+
+换行：命令太长时，行尾用“\”换行
+
+注释：行首字符为“#”的文本行
+
+关闭回显：在行首字符后和命令前添加“@”
+
+- 未关闭回显时，make会首先回显（打印）命令，然后执行该命令
+- 通常仅在注释和纯显示的echo命令前使用此功能
+
+include filename：包含其他文件
+
+- 处理模式与C/C++类似
+- 行首加“-”：忽略文件包含错误
+
+通配符
+
+- `*`（任意数目的任意字符），例如 `*.c` 表示所有C源文
+- `?`（任意一个字符），例如 `?.c` 表示所有单字符文件名的C源文件
+- `[abc]`（存在括号内的某个字符），例如 `lib[abc].c` 表示第四个字符为 `a`、`b` 或 `c``
+- ``[0-9]`（存在该集合中的某个字符），例如 `lib[0-9].c` 表示第四个字符为0～9之间的数字（含数字0和9） 
+- `[^abc]`（存在非括号内的某个字符），例如 `lib[^abc].c` 表示第四个字符不是 `a`、`b` 或 `c` 
+
+变　量
+
+- 基本变量定义： var_name = value
+- `$(变量名称)`：引用变量（中间无多余空格）；shell变量用 `$$`，例如 `@echo $$HOME` 
+- 变量在使用时展开，形式上类似宏替换
+- 变量的使用场合：目标、先决条件、命令、新的变量
+
+内置变量
+
+- `$(CC)`：当前使用的编译器；`$(MAKE)`：当前使用的 make 工具
+
+自动变量
+
+- `$@`：当前目标；`$<`：当前目标的首个先决条件；`$?`：比目标更新的所有先决条件；`$^`：所有先决条件；`$(@D)` 和`$(@F)` ：`$@` 的目录名和文件名；`$(<D)` 和 `$(<F)`：`$<` 的目录名和文件名
+
+```makefile
+#  makefile样本
+objs = main.o library.o
+
+prog : $(objs)
+	$(CC) -o prog $(objs)
+	@echo "Constructed…"
+main.o : main.c library.h
+	$(CC) -c main.c
+library.o : library.c library.h
+	$(CC) -c library.c
+
+.PHONY : clean
+clean :
+	rm -f prog $(objs) *～
+```
+
+变量定义格式
+
+- var_name = value：在执行时扩展，允许递归，可以使用后续代码中出现的值
+- var_name := value：在定义时扩展，不允许递归，使用右侧的现值，不能使用后续代码中出现的值
+- var_name ?= value：只有在该变量为空时才设置值，否则维持原值
+- var_name += value：将值追加到变量的尾部；若变量未定义，则“+=”自动解释为“=”；若变量已定义，则“+=”继承上次的操作符，并追加新值
+
+多行变量
+
+```makefile
+define var_name
+	@echo "One"
+	@echo "Two"
+endef
+```
+
+- define和endef行首字符不能为Tab键，对齐时可使用空格
+- 引用：$(var_name)
+- 多行变量主要用于定义命令包，使用多行变量要小心，展开时有可能导致脚本错误
+
+目标变量：类似局部变量，仅对本目标规则链有效
+
+- target … : var_name = value：定义目标变量
+
+静态模式：以 `%` 通配
+
+```makefile
+target ... : target-pattern : prerequisites ...
+[Tab键]	commands
+```
+
+- 目的：用于处理模式相同的多目标，简化脚本代码
+
+- 示例：每个目标的文件以“.o”结尾，先决文件为对应的“.c”
+
+  ```makefile
+  objs = main.o library.o
+  $(objs) : %.o : %.c
+  	$(CC) -c $(CFLAGS) $< -o $@
+  ```
+
+  等价于
+
+  ```makefile
+  main.o : main.c
+  	$(CC) -c $(CFLAGS) main.c -o main.o
+  library.o : library.c
+  	$(CC) -c $(CFLAGS) library.c -o library.o
+  ```
+
+条件判断基本格式
+
+-  ```makefile
+    conditional-directive		
+        text-if-true			
+    endif
+    ```
+
+- ```makefile
+  conditional-directive
+  	text-if-true
+  else
+  	text-if-false
+  endif
+  ```
+
+可用的条件判断
+
+- 判断两个参数是否相等：ifeq (arg1,arg2)、 ifeq 'arg1' 'arg2'、 ifeq "arg1" "arg2"
+- 判断两个参数是否不等：ifneq（具体格式与ifeq相同）
+- 判断某个变量是否已定义：ifdef variable_name
+- 判断某个变量是否未定义：ifndef variable_name
+
+循环：可以在makefile中使用shell循环
+
+```makefile
+rulefor :
+	for filename in `echo $(objs)`; \
+	do \
+		rm -f $$filename; \
+	done
+```
+
+注意事项
+
+- 循环为shell循环，为保证多行命令在同一个进程下执行，必须合并成单条命令并在行尾添加分行标识
+- 可以使用反引号执行命令，所获得的结果集合可以作为循环的处理集合
+- filename本身是shell变量，需使用“$$”引用
+
+函数：像变量一样使用“$()”标识
+
+- $(function arg1,arg2,…)：函数调用，函数名为function，后跟逗号分隔的参数列表，函数参数前后不能有多余的空格
+
+- $(subst from,to,text) ：make的字符串替换函数，将text中的from字符串替换为to，返回替换后的字符串
+
+  ```makefile
+  comma := ,
+  #  定义空值
+  empty :=
+  #  定义空格
+  space := $(empty) $(empty)
+  foo := a b c
+  #  将“a b c”替换为“a,b,c”
+  bar := $(subst $(space),$(comma),$(foo))
+  ```
+
+### 1.7、系统编程实践
+
+1.7.1、请逐步实现以下功能
+
+1. 编写程序，通过随机数设备读取随机数，从而获取 1～52 之间的随机数。
+2. 将生成的随机数模拟为不含大小王牌的扑克牌。编写函数，重复生成 52 个随机数，并映射为每张扑克牌。说明：重复生成的典型原则是按照花色（梅花、方块、红桃、黑桃）和大小（2～10、J、Q、K、A）顺序进行映射，例如梅花 2 小于梅花3，......，梅花 A 小于方块 2，……，黑桃 K 小于黑桃 A。需要注意的是，一旦生成某张牌后，即不允许再次生成它。
+3. 将去除大小王的52张扑克牌平均分配给四个玩家，每家13张牌。为描述问题方便，2～9 的牌张使用对应字符 ‘2’～‘9’，字符 ‘T’ 表示 10，‘J’、‘Q’、‘K’、‘A’ 表示四类大牌。记每张 2～10 为 0 点，J 为 1点，Q 为 2 点，K 为 3 点，A 为 4 点，统计每家大牌点值。
+4. 上述牌点计算方法主要用于桥牌游戏，请完成桥牌库的初步设计与实现。
+
+1.7.2、编写程序，测试临时文件的读写访问。
+
+1.7.3、编写程序，查看 CPU 信息和进程信息。信息越全越好，本题将作为课程大作业 “Web服务器” 的服务。
+
+1.7.4、为习题 1.7.3 编写 makefile 文件。
+
+
+
+
+## 2、进程编程
+
+### 2.1、进程的基本概念
 
 进程
 
@@ -199,7 +1209,7 @@ int main()
 - 创建会话：`pid_t setsid()`
   - 返回值：新创建的会话 ID，出错时返回 -1，并设置 `errno` 值
 
-### 信号
+### 2.2、信号
 
 信号是发送给进程的特殊异步消息，当进程接收到信号时立即处理，无需完成当前代码行。
 
@@ -259,9 +1269,9 @@ int main() {
 
 
 
-### 进程管理
+### 2.3、进程管理
 
-#### 进程创建
+#### 2.3.1、进程创建
 
 `system()`：在程序中执行 Shell 命令
 
@@ -300,7 +1310,7 @@ int main() {
 
 
 
-#### 执行命令
+#### 2.3.2、执行命令
 
 `exec()` 函数簇
 
@@ -318,7 +1328,7 @@ int main() {
 - 包含字母 l：接受 C 格式的可变参数列表
 - 包含字母 e：接受附加的环境参数列表，格式为以 NULL 结尾的字符串数组，且字符串格式为 `VARIABLE=value`
 
-#### 进程调度
+#### 2.3.3、进程调度
 
 子进程与父进程的调度没有固定顺序，不能事先假定。
 
@@ -340,7 +1350,7 @@ int main() {
 - 获取进程的处理器亲和性：`int sched_getaffinity( pid_t pid, size_t cpusetsize, cpu_set_t * mask );`
 - 设置进程的处理器亲和性：`int sched_setaffinity( pid_t pid, size_t cpusetsize, cpu_set_t * mask );`
 
-#### 进程终止
+#### 2.3.4、进程终止
 
 终止进程函数：`kill()`
 
@@ -383,7 +1393,7 @@ int main ()
 
 
 
-#### 僵尸进程
+#### 2.3.5、僵尸进程
 
 子进程已结束，但父进程未调用 `wait()` 函数等待
 
@@ -413,7 +1423,7 @@ int main ()
 
 
 
-#### 子进程异步清除
+#### 2.3.6、子进程异步清除
 
 `SIGCHLD` 信号：子进程终止时，向父进程自动发送，编写此信号处理例程，异步清除子进程
 
@@ -452,7 +1462,7 @@ int main ()
 
 
 
-#### 守护进程
+#### 2.3.7、守护进程
 
 创建守护进程的步骤
 
@@ -503,7 +1513,7 @@ int main()
 - 参数：若 `nochdir` 非 0，不更改工作目录；若 `noclose` 非 0，不关闭所有打开的文件描述符；一般均设为 0
 - 返回值：成功时返回 0，失败时返回 -1，并设置 `errno` 值
 
-### 进程通信
+### 2.4、进程通信
 
 - 管道：相关进程间的顺序通信
 - 进程信号量：进程间通信的同步控制机制
@@ -512,7 +1522,7 @@ int main()
 - 消息队列：在进程间传递二进制块数据
 - 套接字：支持无关进程，甚至不同计算机进行通信
 
-#### 管道
+#### 2.4.1、管道
 
 管道（pipe）的性质与意义
 
@@ -546,7 +1556,7 @@ read_fd = pipe_fds[0];
 write_fd = pipe_fds[1];
 ```
 
-##### 管道通信
+##### 2.4.1.1、管道通信
 
 ```c++
 #include <stdlib.h>
@@ -603,7 +1613,7 @@ int main()
 }
 ```
 
-##### 管道重定向
+##### 2.4.1.2、管道重定向
 
 等位文件描述符
 
@@ -661,7 +1671,7 @@ int main ()
 
 
 
-#### 进程信号量
+#### 2.4.2、进程信号量
 
 进程信号量： System V 信号量
 
@@ -687,7 +1697,7 @@ Linux 信号量实现：两个版本
 - 每次创建和管理的进程信号量不是一个，而是一个集合（数组），该集合可能包含多个进程信号量
 - 使用键值 `key` 关联进程信号量集，但进程信号量集本身由进程信号量的标识符`semid` 标识，函数调用时几乎总是使用 `semid` ——可以这么理解：`semid` 对内，`key` 对外
 
-##### 获取进程信号量
+##### 2.4.2.1、获取进程信号量
 
 `semget()` 函数：创建或获取进程信号量集
 
@@ -701,7 +1711,7 @@ Linux 信号量实现：两个版本
   - `semflg` 为访问标志
 - 返回值：成功时返回进程信号量集的标识符 `semid`，失败时返回 -1，并设置 `errno` 值
 
-##### 控制进程信号量
+##### 2.4.2.2、控制进程信号量
 
 `semctl()` 函数：控制和管理进程信号量集
 
@@ -741,7 +1751,7 @@ Linux 信号量实现：两个版本
 
 - `IPC_STAT`/`IPC_SET`（获取或设置进程信号量信息）、`GETALL`（获取全部信号量的信号数）、 `GETVAL`/`SETVAL `（获取或设置单个信号量的信号数）等
 
-##### 获取与释放
+##### 2.4.2.3、获取与释放
 
 ```c++
 //  获取与key关联的二元信号量集，必要时会分配之
@@ -766,7 +1776,7 @@ int InitializeBinarySemaphore( int semid )
 }
 ```
 
-##### 等待与发布(PV 操作)
+##### 2.4.2.4、等待与发布(PV 操作)
 
 等待与发布进程信号量函数 `semop()`
 
@@ -806,7 +1816,7 @@ int PostBinarySemaphore( int semid )
 }
 ```
 
-#### 共享内存
+#### 2.4.3、共享内存
 
 共享内存的意义：快捷方便的本地通信机制
 
@@ -831,7 +1841,7 @@ Linux内存模型
 - 分配新的共享内存段将创建虚拟内存页面，其他进程连接该共享内存段即可访问
 - 共享内存段的分配只有由一个进程负责，释放也同样
 
-##### 获取共享内存
+##### 2.4.3.1、获取共享内存
 
 `shmget()` 函数：获取或分配一段共享内存
 
@@ -864,7 +1874,7 @@ Linux内存模型
 
 - `int seg_id = shmget( shm_key, getpagesize(), IPC_CREAT | S_IRUSR | S_IWUSER );`
 
-##### 连接与拆卸共享内存
+##### 2.4.3.2、连接与拆卸共享内存
 
 `shmat()` 函数：连接共享内存
 
@@ -881,7 +1891,7 @@ Linux内存模型
 
 - 原型：`int shmdt( const void * shmaddr );`
 
-##### 使用共享内存
+##### 2.4.3.3、使用共享内存
 
 ```c++
 #include <stdio.h>
@@ -920,7 +1930,7 @@ int main ()
 
 
 
-#### 映射内存
+#### 2.4.4、映射内存
 
 `mmap()` 函数：头文件 `sys/mman.h`
 
@@ -993,7 +2003,7 @@ int main( int argc, char * const argv[] )
 
 
 
-#### 消息队列
+#### 2.4.5、消息队列
 
 消息队列：在两个进程间传递二进制块数据
 
@@ -1035,7 +2045,7 @@ int main( int argc, char * const argv[] )
 - 参数： `msqid` 为 `msgget()` 返回的消息队列标识符；`cmd` 指定要执行的命令，支持的命令有 `IPC_STAT`、`IPC_SET`、`IPC_RMID`、`IPC_INFO`、`MSG_INFO`、`MSG_STAT`；`buf` 的意义与 `cmd` 参数有关
 - 返回值：成功时返回值取决于 `cmd` 参数，失败时返回 -1，并设 `errno` 值
 
-#### 进程池
+#### 2.4.6、进程池
 
 动机：为什么需要引入进程池？
 
@@ -1057,19 +2067,24 @@ int main( int argc, char * const argv[] )
 - 存在多种选择子进程的策略，如随机选择或轮值制度，如共享单一任务队列，还可以使用更加智能化的负载平衡技术
 - 父子进程之间应该具有传递信息的通道，如管道、共享内存、消息队列等，也可能需要同步机制
 
-### 进程编程实践
+### 2.5、进程编程实践
 
-13.1、编写程序，调用 `fork()` 创建子进程，使用二元进程信号量进行同步。提示：在创建子进程前，使用 `IPC_PRIVATE` 创建新的二元进程信号量，其创建的进程信号量并不是该进程私有的，子进程可以通过复制的 `semid` 访问该二元进程信号量。父进程在等待子进程结束后释放该二元进程信号量。
+2.5.1、编写程序，调用 `fork()` 创建子进程，使用二元进程信号量进行同步。提示：在创建子进程前，使用 `IPC_PRIVATE` 创建新的二元进程信号量，其创建的进程信号量并不是该进程私有的，子进程可以通过复制的 `semid` 访问该二元进程信号量。父进程在等待子进程结束后释放该二元进程信号量。
 
-13.2、编程实现进程池类 `ProcessPool`。提示：（1）进程池应实现为类模板，从而可以针对不同的任务类别构造不同的进程池；（2）每个任务类别的进程池应实现为单子类；（3）可以统一事件源，即统一管理同类的任务序列，典型的策略是实现父子进程通信的信号管道；（4）调度算法随意。
+2.5.2、编程实现进程池类 `ProcessPool`。提示：
+
+1. 进程池应实现为类模板，从而可以针对不同的任务类别构造不同的进程池；
+2. 每个任务类别的进程池应实现为单子类；
+3. 可以统一事件源，即统一管理同类的任务序列，典型的策略是实现父子进程通信的信号管道；
+4. 调度算法随意。
 
 
 
-## 线程编程
+## 3、线程编程
 
 
 
-### 线程基本概念
+### 3.1、线程基本概念
 
 线程的定义
 
@@ -1109,9 +2124,9 @@ Linux线程支持史
 - 线程用于开发细颗粒度并行性，进程用于开发粗颗粒度并行性
 - 线程容易共享数据，进程共享数据必须使用进程间通讯机制
 
-### 线程管理
+### 3.2、线程管理
 
-#### 线程创建
+#### 3.2.1、线程创建
 
 线程创建函数
 
@@ -1160,7 +2175,7 @@ int  main()
 }
 ```
 
-#### 线程函数参数
+#### 3.2.2、线程函数参数
 
 ```c++
 #include <pthread.h>
@@ -1230,7 +2245,7 @@ int  main()
 }
 ```
 
-#### 线程函数返回值
+#### 3.2.3、线程函数返回值
 
 ```c++
 #include <pthread.h>
@@ -1272,7 +2287,7 @@ int  main()
 }
 ```
 
-#### 线程 ID
+#### 3.2.4、线程 ID
 
 `pthread_equal()` 函数：确认两个线程是否相同
 
@@ -1283,7 +2298,7 @@ int  main()
 - 原型：`pthread_t pthread_self();`
 - 示例：`if( !pthread_equal( pthread_self(), other_tid ) )  pthread_join( other_tid, NULL );`
 
-#### 线程属性
+#### 3.2.5、线程属性
 
 线程属性：精细调整线程的行为
 
@@ -1340,7 +2355,7 @@ int  main()
 }
 ```
 
-#### 线程撤销
+#### 3.2.6、线程撤销
 
 `pthread_cancel()` 函数：撤销线程
 
@@ -1397,7 +2412,7 @@ void Transfer( double * accounts, int from, int to, double amount )
 }
 ```
 
-#### 线程局部存储
+#### 3.2.7、线程局部存储
 
 线程局部存储（thread local storage，TLS）：每个线程的独有数据
 
@@ -1453,7 +2468,7 @@ int  main()
 }
 ```
 
-#### 线程清除
+#### 3.2.8、线程清除
 
 线程清除函数：回调函数，单 `void*` 参数，无返回值
 
@@ -1526,9 +2541,9 @@ void *  ThreadFunc( void * arg )
 
 
 
-### 线程同步机制
+### 3.3、线程同步机制
 
-#### 资源竞争
+#### 3.3.1、资源竞争
 
 编程任务
 
@@ -1556,7 +2571,7 @@ void *  DequeueJob( void * arg )
 }
 ```
 
-#### 互斥
+#### 3.3.2、互斥
 
 互斥（mutex）定义与性质：MUTial EXclusion
 
@@ -1695,7 +2710,7 @@ int  main()
 }
 ```
 
-#### 死锁
+#### 3.3.3、死锁
 
 死锁：资源被竞争占用，且无法释放
 
@@ -1706,7 +2721,7 @@ int  main()
 - 调用 `pthread_mutexattr_setkind_np()` 函数设置互斥类型，函数第一个参数为指向互斥属性对象的指针，第二个参数为 `PTHREAD_MUTEX_RECURSIVE_NP`（递归互斥）或 `PTHREAD_MUTEX_ERRORCHECK_NP`（检错互斥）
 - 调用 `pthread_mutexattr_destroy()` 函数销毁互斥属性对象
 
-#### 信号量
+#### 3.3.4、信号量
 
 问题：如何确保任务队列中有任务可以做？
 
@@ -1737,7 +2752,7 @@ POSIX 标准信号量：头文件 `semaphore.h`
 
 - 原型：`int sem_destroy( sem_t * sem );`
 
-#### 作业队列
+#### 3.3.5、作业队列
 
 ```c++
 //  完整程序代码
@@ -1819,7 +2834,7 @@ int  main()
 
 
 
-#### 条件变量
+#### 3.3.6、条件变量
 
 条件变量的功能与目的
 
@@ -1849,7 +2864,7 @@ int  main()
 - 原型：`int pthread_cond_wait( pthread_cond_t * cond, pthread_mutex_t * mutex );`
 - 参数：`mutex` 为互斥，以确保函数操作的原子性
 
-### C++11线程库
+### 3.4、C++11线程库
 
 支持平台无关的并行程序开发
 
@@ -1865,7 +2880,7 @@ int  main()
 
 [Anthony Williams. C++ Concurrency in Action, Practical Multithreading. Manning Publications, 2012.](https://www.gitbook.com/book/chenxiaowei/cpp_concurrency_in_action/details)
 
-#### 线程类
+#### 3.4.1、线程类
 
 线程类：`thread`
 
@@ -1992,7 +3007,7 @@ int  main()
 
 
 
-#### 互斥类
+#### 3.4.2、互斥类
 
 基本互斥：`mutex` 类
 
@@ -2048,10 +3063,20 @@ int  main()
 
 基于作用域的锁管理类模板：`std::lock_guard`
 
+- 构造函数：
+  - `std::lock_guard(std::mutex);`
+  - `std::lock_guard(std::mutex, std::defer_lock_t);`
+  - `std::lock_guard(std::mutex, std::try_to_lock_t);`
+  - `std::lock_guard(std::mutex, std::adopt_lock_t);`
 - 构造时是否加锁可选，不加锁时假定当前线程已获得锁的所有权，析构时自动解锁，所有权不可转移，对象生存期内不允许手动加锁和解锁
 
 独一锁管理类模板：`std::unique_lock`
 
+- 构造函数：
+  - `std::unique_lock(std::mutex);`
+  - `std::unique_lock(std::mutex, std::defer_lock_t);`
+  - `std::unique_lock(std::mutex, std::try_to_lock_t);`
+  - `std::unique_lock(std::mutex, std::adopt_lock_t);`
 - 构造时是否加锁可选，对象析构时如果持有锁会自动解锁，所有权可转移，对象生存期内允许手动加锁和解锁
 
 共享锁管理类模板：`std::shared_lock`（C++14）
@@ -2073,7 +3098,15 @@ int  main()
 多个互斥的竞争访问
 
 - 多个线程对多个互斥加锁时保持顺序一致性，以避免可能的死锁
+
 - 使用 `std::lock()` 或 `std::try_lock()`
+
+- 原型：
+
+  ```c++
+  template<typename L1, typename L2, typename... L3>
+  void lock(L1& l1, L2& l2, L3&... l3)
+  ```
 
 
 使用互斥管理策略类重新实现线程函数
@@ -2143,7 +3176,7 @@ int main()
 
 
 
-#### 条件变量类
+#### 3.4.3、条件变量类
 
 `std::condition_variable` 类
 
@@ -2160,37 +3193,72 @@ int main()
 
 成员函数 `notify_one()`：通知一个等待线程
 
-- 原型：`void motify_one() noexcept;`
+- 原型：`void notify_one() noexcept;`
 
 成员函数 `notify_all()`：通知全部等待线程
 
-- 原型：`void motify_one() noexcept;`
+- 原型：`void notify_all() noexcept;`
 
 成员函数 `wait()`：阻塞当前线程至被唤醒
 
-- 原型：`template<typename Lock> void wait( Lock & lock );`
+- 原型：
 
-- 原型：`template<typename Lock, typename Predicate> void wait( Lock & lock, Predicate p );`
+  ````c++
+  template<typename Lock> 
+  void wait( Lock & lock );
+  ````
+
+- 原型：
+
+  ```c++
+  template<typename Lock, typename Predicate> 
+  void wait( Lock & lock, Predicate p );
+  ```
 
 成员函数 `wait_for()`：阻塞至被唤醒或超过指定时长
 
-- 原型： `template<typename Lock, typename Rep, typename _Period> cv_status wait_for( Lock& lock, const chrono::duration<Rep, Period>& rtime );`
-- 原型：`template<typename Lock, typename Rep, typename Period, typename Predicate> bool wait_for( Lock& lock, const chrono::duration<Rep, Period>& rtime, Predicate p );`
+- 原型：
+
+  ```c++
+  template<typename Lock, typename Rep, typename _Period> 
+  cv_status wait_for( Lock& lock, const chrono::duration<Rep, Period>& rtime );
+  ```
+
+- 原型：
+
+  ```c++
+  template<typename Lock, typename Rep, typename Period, typename Predicate> 
+  bool wait_for( Lock& lock, const chrono::duration<Rep, Period>& rtime, Predicate p );
+  ```
 
 成员函数 `wait_until()`：阻塞至被唤醒或到达指定时点
 
-- 原型：`template<typename Lock, typename Clock, typename Duration> cv_status wait_until( Lock & lock, const chrono::time_point<Clock, Duration>& atime);`
-- 原型：`template<typename Lock, typename Clock, typename Duration, typename Predicate> bool wait_until( Lock& lock, const chrono::time_point<Clock, Duration>& atime, Predicate p );`
+- 原型：
+
+  ```c++
+  template<typename Lock, typename Clock, typename Duration> 
+  cv_status wait_until( Lock & lock, const chrono::time_point<Clock, Duration>& atime);
+  ```
+
+- 原型：
+
+  ```c++
+  template<typename Lock, typename Clock, typename Duration, typename Predicate> 
+  bool wait_until( Lock& lock, const chrono::time_point<Clock, Duration>& atime, Predicate p );
+  ```
 
 ```c++
 #include <iostream>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+
 std::mutex  x;
 std::condition_variable  cond;
 bool  ready = false;
+
 bool  IsReady()  {  return ready;  }
+
 void  Run( int no )
 {
   std::unique_lock<std::mutex>  locker( x );
@@ -2200,6 +3268,7 @@ void  Run( int no )
   //  第二个参数为谓词，亦可使用函子实现
   std::cout << "thread " << no << '\n';
 }
+
 int  main()
 {
   std::thread  threads[8];
@@ -2220,7 +3289,7 @@ int  main()
 
 
 
-#### 原子型式
+#### 3.4.4、原子类型
 
 使用方法
 
@@ -2229,30 +3298,34 @@ int  main()
 
 意义：轻量级，支持单变量上的原子操作
 
-| 操　作                                             | `atomic_ flag` | `atomic <bool>` | `atomic     <int_t>` | `atomic     <T *>` | `atomic     <other_t>` |
-| -------------------------------------------------- | -------------- | --------------- | -------------------- | ------------------ | ---------------------- |
-| `test_and_set`                                     | `√`            |                 |                      |                    |                        |
-| `clear`                                            | √              |                 |                      |                    |                        |
-| `is_lock_free`                                     |                | √               | √                    | √                  | √                      |
-| `load`                                             |                | √               | √                    | √                  | √                      |
-| `store`                                            |                | √               | √                    | √                  | √                      |
-| `exchange`                                         |                | √               | √                    | √                  | √                      |
-| `compare_exchange_weak`, `compare_exchange_strong` |                | √               | √                    | √                  | √                      |
-| `fetch_add,` `+=`                                  |                |                 | √                    | √                  |                        |
-| `fetch_sub,  -=`                                   |                |                 | √                    | √                  |                        |
-| `fetch_or, |=`                                     |                |                 | √                    |                    |                        |
-| `fetch_and,  &=`                                   |                |                 | √                    |                    |                        |
-| `fetch_xor,  ^=`                                   |                |                 | √                    |                    |                        |
-| `++, --`                                           |                |                 | √                    | √                  |                        |
+| 操　作                                             | `atomic_flag` | `atomic<bool>` | `atomic<int_t>` | `atomic<T*>` | `atomic<other_t>` |
+| -------------------------------------------------- | ------------- | -------------- | --------------- | ------------ | ----------------- |
+| `test_and_set`                                     | √             |                |                 |              |                   |
+| `clear`                                            | √             |                |                 |              |                   |
+| `is_lock_free`                                     |               | √              | √               | √            | √                 |
+| `load`                                             |               | √              | √               | √            | √                 |
+| `store`                                            |               | √              | √               | √            | √                 |
+| `exchange`                                         |               | √              | √               | √            | √                 |
+| `compare_exchange_weak`, `compare_exchange_strong` |               | √              | √               | √            | √                 |
+| `fetch_add,` `+=`                                  |               |                | √               | √            |                   |
+| `fetch_sub,  -=`                                   |               |                | √               | √            |                   |
+| `fetch_or, |=`                                      |               |                | √               |              |                   |
+| `fetch_and,  &=`                                   |               |                | √               |              |                   |
+| `fetch_xor,  ^=`                                   |               |                | √               |              |                   |
+| `++, --`                                           |               |                | √               | √            |                   |
 
 ```c++
 #include <atomic>
 #include <iostream>
 #include <thread>
+
 int  n = 0;
 std::atomic<int>  a( 0 );
+
 void  AddAtomically( int m )  {  while( m-- )  a.fetch_add( 1 );  }
+
 void  Add( int m )  {  while( m-- )  ++n;  }
+
 int  main()
 {
   std::thread  ts1[8], ts2[8];
@@ -2269,7 +3342,7 @@ int  main()
 
 
 
-#### 期许与承诺
+#### 3.4.5、期许与承诺
 
 线程返回值
 
@@ -2290,9 +3363,12 @@ int  main()
 #include <tuple>
 #include <thread>
 #include <mutex>
+
 std::mutex x;
+
 //  劳工线程类模板，处理T型数据对象
-template< typename T >  class Worker
+template< typename T >  
+class Worker
 {
 public:
   explicit Worker( int no, T a = 0, T b = 0 ) : _no(no), _a(a), _b(b)  {  }
@@ -2304,8 +3380,8 @@ private:
 
 int main()
 {
-  //  定义能够存储8个三元组的向量v，元组首元素为指向劳工对象的指针
-  //  次元素保存该劳工对象计算后的结果数据，尾元素为指向劳工线程对象的指针
+  //  定义能够存储8个三元组的向量v，
+  //  元组首元素为指向劳工对象的指针，次元素保存该劳工对象计算后的结果数据，尾元素为指向劳工线程对象的指针
   //  向量中的每个元素都表示一个描述线程运行的线程对象，
   //  该线程对象对应的执行具体任务的劳工对象，及该劳工对象运算后的返回值
   std::vector< std::tuple<Worker<int>*, int, std::thread*> >  v( 8 );
@@ -2470,7 +3546,361 @@ void DoCalculateFactorial(
 
 
 
-14.1 考虑作业队列的容量限制，修改代码，实现标准的生产者—消费者模型。设作业队列最多容量amount个作业，有m个接收作业的线程，有n个处理作业的线程。
+### 3.5、线程编程实践
 
-14.2 实现Linux互斥、信号量和条件变量的封装类，并使用上述同步机制实现线程池类。提示：（1）线程池功能与实现类似于进程池。（2）以作业型作为模板形式参数实现作业处理线程池类和作业处理类。（3）线程函数为静态函数，要访问类的非静态成员，可以定义类的静态对象或者传递对象指针，在线程函数中通过该对象指针访问其成员。（4）可以参考C++11架构。
+3.5.1、考虑作业队列的容量限制，修改代码，实现标准的生产者—消费者模型。设作业队列最多容量amount个作业，有m个接收作业的线程，有n个处理作业的线程。
+
+3.5.2、实现Linux互斥、信号量和条件变量的封装类，并使用上述同步机制实现线程池类。提示：（1）线程池功能与实现类似于进程池。（2）以作业型作为模板形式参数实现作业处理线程池类和作业处理类。（3）线程函数为静态函数，要访问类的非静态成员，可以定义类的静态对象或者传递对象指针，在线程函数中通过该对象指针访问其成员。（4）可以参考C++11架构。
+
+
+
+## 4、网络编程
+
+### 4.1、Internet网络协议
+
+#### 4.1.1、TCP/IP协议
+
+数据链路层
+
+- 网卡接口的网络驱动程序，处理数据在物理媒介上的传输；不同的物理网络具有不同的电气特性，网络驱动程序隐藏实现细节，为上层协议提供一致的接口
+- 数据链路层常用协议：地址解析协议（ARP）和反向地址解析协议（RARP），实现IP地址与机器物理地址（通常为MAC地址）之间的相互转换
+
+网络层
+
+- 实现数据包的路由和转发
+- 常用协议：IP、ICMP
+
+网络层
+
+- IP协议：逐跳发送模式；根据数据包的目的地IP地址决定数据如何发送；如果数据包不能直接发送至目的地，IP协议负责寻找一个合适的下一跳路由器，并将数据包交付给该路由器转发
+- ICMP协议：因特网控制报文协议，用于检测网络连接
+
+传输层
+
+- 为两台主机的应用程序提供端到端通信
+- 传输层使用的主要协议：TCP、UDP
+- TCP：传输控制协议，为应用层提供可靠的、面向连接的、基于流的可靠服务；使用超时重发、数据确认等方式确保数据被正确发送至目的地
+- UDP：用户数据报协议，为应用层提供不可靠的、无连接的、基于数据报的服务；不保证数据能正确发送
+
+应用层
+
+- 应用程序逻辑实现
+- 常用协议：ping、telnet、DNS、HTTP、FTP、DHCP等
+
+#### 4.1.3、HTTP协议
+
+超文本传输协议：应用层协议
+
+主要特点
+
+- 支持客户/服务器模式
+- 简单快速：客户向服务器请求服务时，只需传送请求方法和路径；请求方法常用GET、HEAD、POST等，每种方法规定了客户与服务器联系的不同类型；HTTP协议简单，服务器程序规模小，通信速度较快
+- 灵活：HTTP允许传输任意类型的数据对象；正在传输的类型由Content-Type加以标记
+- 无8连接：无连接是指每次连接只处理一个请求；服务器处理完客户请求，并收到客户应答后，即断开连接，节省传输时间
+- 无状态：无状态是指协议对于事务处理没有记忆能力；应答较快，但传输数据量较大
+
+HTTP URL：定位网络资源
+
+- `http://host[:port][abs_path]`
+
+HTTP请求
+
+- 由三部分组成：请求行、消息报头、请求正文
+- 格式：Method Request-URI HTTP-Version CRLF
+- Method：请求方法，GET、POST等
+- Request-URI：统一资源标识符
+- HTTP-Version：请求的HTTP协议版本
+- CRLF：回车换行
+
+HTTP响应
+
+- 由三部分组成：状态行、消息报头、响应正文
+- 状态行格式：HTTP-Version Status-Code Reason-Phrase CRLF
+- HTTP-Version：服务器HTTP协议版本
+- Status-Code：服务器返回的响应状态码
+- Reason-Phrase：状态码的文本描述
+
+HTTP状态码
+
+- 状态代码有三位数字组成，首数字定义响应类别
+  - 1xx：指示信息，表示请求已接收，继续处理；
+  - 2xx：成功；
+  - 3xx：重定向，要完成请求必须进行更进一步的操作；
+  - 4xx：客户端错误，请求有语法错误或请求无法实现；
+  - 5xx：服务器端错误，服务器未能实现合法的请求
+- 常见状态代码
+  - 200：OK，请求成功；
+  - 400：Bad Request，请求有语法错误，不能被服务器所理解；
+  - 401：Unauthorized，请求未经授权；
+  - 403：Forbidden，服务器收到请求，但是拒绝提供服务；
+  - 404：Not Found，请求资源不存在；
+  - 500：Internal Server Error，服务器发生不可预期的错误；
+  - 503：Server Unavailable，服务器不能处理客户请求
+
+
+
+### 4.2、套接字
+
+#### 4.2.1、套接字的基本概念
+
+通信类型：控制套接字如何传输和处理数据，数据以包的形式传输
+
+- 连接（connection）类型：确保所有包依序传输，如果丢包，则请求重传
+- 数据报（datagram）类型：不保证包的到达顺序，包可能丢失
+
+名空间：指定套接字地址格式
+
+- 本地名空间：套接字地址为普通文件名
+- Internet名空间：套接字地址由Internet地址和端口号（用于区分一台主机上的多个套接字）确定
+
+协议：确定数据如何传输
+
+#### 4.2.2、套接字函数
+
+头文件：`sys/socket.h`
+
+`socket()` 函数：创建套接字
+
+- 原型：`int socket( int domain, int type, int protocol );`
+- 参数：名空间、通信类型和协议
+- 名空间：`PF_LOCAL`（本地）或 `PF_INET`（Internet）
+- 通信类型：`SOCK_STREAM`（连接类型）或 `SOCK_DGRAM`（数据报类型）
+- 协议：传递 0，让系统自动选择协议（通常为最佳协议）
+- 返回值：套接字描述符
+
+`close()` 函数：释放套接字
+
+- 原型：`int close( int fd );`
+
+`connect()` 函数：创建两个套接字之间的连接
+
+- 客户发起此系统调用，试图与服务器建立套接字连接
+- 原型：`int connect( int sockfd, const struct sockaddr * addr, socklen_t addrlen );`
+- 参数： `sockfd` 为套接字文件描述符； `addr` 为指向套接字地址结构体的指针（服务器地址）； `addrlen` 为服务器地址字符串的长度
+- 返回值：0 表示连接成功，-1 表示连接失败
+
+`send()` 函数：发送数据
+
+- 原型：
+
+  ```c++
+  ssize_t send( int sockfd, const void * buf, size_t len, int flags );
+  ```
+
+- 原型：
+
+  ```c++
+  ssize_t sendto( int sockfd, const void * buf, size_t len, int flags, const struct sockaddr * dest_addr, socklen_t addrlen );
+  ```
+
+- 原型：
+
+  ```c++
+  ssize_t sendmsg( int sockfd, const struct msghdr * msg, int flags );
+  ```
+
+- 只有在套接字处于连接状态时才可调用
+
+bind()函数：绑定服务器套接字与其地址
+
+- 原型：
+
+  ```c++
+  int bind( int sockfd, const struct sockaddr * addr, socklen_t addrlen );
+  ```
+
+listen()函数：侦听客户连接
+
+- 原型：
+
+  ```c++
+  int listen( int sockfd, int backlog );
+  ```
+
+- 参数：`backlog` 指定有多少个挂起连接可以进入队列，超出该值的连接将被抛弃
+
+`accept()` 函数：接受连接，为该连接创建一个新的套接字
+
+- 原型：
+
+  ```c++
+  int accept( int sockfd, struct sockaddr * addr, socklen_t addrlen );
+  ```
+
+- 参数：`addr` 为指向套接字地址结构体（客户地址）的指针
+
+- 返回值：创建一个新的套接字，以接受客户连接，返回值为新的套接字文件描述符
+
+- 原先套接字文件描述符可以继续接受新连接
+
+#### 4.2.3、本地套接字
+
+本地套接字示例：服务器端
+
+```c++
+#include <iostream>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+
+//  持续读取消息，直到套接字关闭或接收到客户发送的“quit”消息
+//  前者返回true，后者返回false，服务器随后将停止服务
+bool  Serve( int client_socket )
+{
+  while( true )
+  {
+    int  length;
+    char *  msg;
+    //  从套接字中读取文本消息的长度，返回值为0表示客户连接已关闭
+    if( read( client_socket, &length, sizeof(length) ) == 0 )
+      return true;
+    msg = new char[length];
+    read( client_socket, msg, length );
+    std::cout << msg << std::endl;
+    if( !strcmp( msg, "quit" ) )  {  delete[] msg,  msg = NULL;  return false;  }
+    else  delete[] msg,  msg = NULL;
+  }
+}
+
+int  main( int argc, char * const argv[] )
+{
+  const char *  const  socket_name = argv[1];
+  int  socket_fd;
+  struct sockaddr_un  name;
+  bool  serving = true;
+  //  创建套接字
+  socket_fd = socket( PF_LOCAL, SOCK_STREAM, 0 );
+  //  设定服务器性质
+  name.sun_family = AF_LOCAL;
+  strcpy( name.sun_path, socket_name );
+  //  绑定套接字
+  bind( socket_fd, (struct sockaddr *)&name, SUN_LEN( &name ) );
+  //  侦听客户连接
+  listen( socket_fd, 5 );
+  //  重复接受连接，直到某个客户发出“quit”消息
+  while( serving )
+  {
+    struct sockaddr_un  client_name;
+    socklen_t  client_name_len;
+    int  client_socket_fd;
+    //  接受客户连接请求
+    client_socket_fd = accept( socket_fd,
+        (struct sockaddr *)&client_name, &client_name_len );
+    serving = Serve( client_socket_fd );    //  服务连接请求
+    close( client_socket_fd );    //  关闭客户连接
+  }
+  close( socket_fd );
+  unlink( socket_name );    //  删除套接字文件
+  return 0;
+}  
+```
+
+本地套接字示例：客户端
+
+```c++
+#include <iostream>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+
+void SendMsg( int socket_fd, const char * msg )
+{
+    int length = strlen( msg ) + 1;
+    write( socket_fd, &length, sizeof( length ) );
+    write( socket_fd, msg, length );
+}
+
+int  main( int argc, char * const argv[] )
+{
+    const char * const  socket_name = argv[1];
+    const char * const  msg = argv[2];
+    int  socket_fd;
+    struct sockaddr_un  name;
+    //  创建套接字
+    socket_fd = socket( PF_LOCAL, SOCK_STREAM, 0 );
+    //  在套接字地址中存储服务器名称
+    name.sun_family = AF_LOCAL;
+    strcpy( name.sun_path, socket_name );
+    //  连接
+    connect( socket_fd, (struct sockaddr *)&name, SUN_LEN( &name ) );
+    //  发送消息
+    SendMsg( socket_fd, msg );
+    close( socket_fd );
+    return 0;
+}
+```
+
+本地套接字示例：运行
+
+程序测试运行
+
+- 编译链接服务器端程序和客户端程序
+- 进入服务器端程序目录，在终端中输入：./server /tmp/socket；./server为服务器端程序名，/tmp/socket为本服务器启动后的套接字文件名
+- 进入客户端程序目录，在新终端中输入：./client /tmp/socket "Hello World!"；./client为客户端程序名
+- 停止服务器，在客户端输入命令：./client /tmp/socket "quit"
+
+#### 4.2.4、网络套接字
+
+网络套接字示例：客户端
+
+```c++
+#include <stdlib.h>
+#include <stdio.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <string.h>
+
+//  请求Web服务器的主页
+void GetHomepage( int socket_fd )
+{
+    char  buffer[8192];
+    sprintf( buffer, "GET /\n" );
+    write( socket_fd, buffer, strlen( buffer ) );
+    while( true )  {
+        ssize_t  count = read( socket_fd, buffer, 8192 );
+        if( count == 0 )    return;
+        fwrite( buffer, sizeof( char ), count, stdout );
+    }
+}
+
+int main( int argc, char * const argv[] )
+{
+    int  socket_fd;
+    struct sockaddr_in  name;
+    struct hostent *  hostinfo;
+    socket_fd = socket( PF_INET, SOCK_STREAM, 0 );
+    name.sin_family = AF_INET;
+    hostinfo = gethostbyname( argv[1] );
+    if( hostinfo == NULL )    return 1;
+    else    name.sin_addr = *( (struct in_addr *)hostinfo->h_addr );
+    name.sin_port = htons( 80 );
+    if( connect( socket_fd, (struct sockaddr *)&name, sizeof(struct sockaddr_in) ) == -1 )  {
+        perror( "Failure to connect the server." );
+        return 2;
+    }
+    GetHomepage( socket_fd );
+    return 0;
+}
+```
+
+### 4.3、Web服务器开发编程实践
+
+远程系统管理 Web 服务器
+
+- 允许本地或远程客户通过 HTTP 协议访问系统信息，例如显示时间、Linux 发布版本、空闲磁盘空间、当前运行的进程等
+- 使用模块架构针对 Web 请求生成动态 HTML 网页；各模块实现为共享目标库，允许动态装载模块，且可在服务器运行期间添加、删除和替换
+- 在子进程或线程中服务Web请求，并设计进程池或线程池管理这些进程或线程
+- 服务器不要求超级用户权限
+- 不要求实现HTTP全部功能
+- 使用面向对象架构
+
+
 

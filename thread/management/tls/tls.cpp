@@ -17,10 +17,13 @@ void  CloseThreadLog( void * fp )
 void *Work(void *) {
   char filename[256];
   sprintf(filename, "logs/thread%d.log", static_cast<int>(pthread_self()));
+
   FILE *fp = fopen(filename, "w");
+
   pthread_setspecific(tlk, fp);
+
   WriteToThreadLog("Thread starting...");
-  // fclose(fp);
+
   return nullptr;
 }
 
